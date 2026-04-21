@@ -247,6 +247,26 @@
       <input type="file" id="file-input" accept="audio/*" style="display:none;" />
     </div>
 
+    <details style="margin-bottom:16px;">
+      <summary style="font-size:11px; color:var(--dim);">Using a YouTube video?</summary>
+      <div style="margin-top:10px; padding:12px; background:var(--panel-2);
+           border:1px solid var(--line); border-radius:3px; font-size:11px; color:var(--dim); line-height:1.8;">
+        Browsers can't download YouTube directly — extract the audio locally with
+        <a href="https://github.com/yt-dlp/yt-dlp" target="_blank"
+           style="color:var(--amber); text-decoration:none;">yt-dlp</a>:<br/>
+        <code style="color:var(--text); background:var(--bg); padding:6px 10px;
+              border-radius:2px; display:inline-block; margin-top:6px; font-size:11px;">
+          yt-dlp -x --audio-format mp3 -o track.mp3 "https://youtube.com/watch?v=…"
+        </code><br/>
+        <span style="font-size:10px; margin-top:4px; display:inline-block;">
+          Install: <code style="color:var(--text);">brew install yt-dlp</code>
+          &nbsp;/&nbsp; <code style="color:var(--text);">pip install yt-dlp</code>
+          &nbsp;/&nbsp; <a href="https://github.com/yt-dlp/yt-dlp/releases" target="_blank"
+             style="color:var(--amber); text-decoration:none;">Windows exe</a>
+        </span>
+      </div>
+    </details>
+
     <div id="file-info" style="display:none; margin-bottom:16px; padding:12px;
          background:var(--panel-2); border:1px solid var(--line); border-radius:3px;">
       <div class="info-grid">
@@ -260,6 +280,14 @@
 
     <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
       <div>
+        <div class="section-label" style="margin-bottom:4px;">Instrument</div>
+        <select id="instrument" onchange="onInstrumentChange()">
+          <option value="guitar">Guitar</option>
+          <option value="bass4">Bass (4-string)</option>
+          <option value="bass5">Bass (5-string)</option>
+        </select>
+      </div>
+      <div>
         <div class="section-label" style="margin-bottom:4px;">Tuning</div>
         <select id="tuning">
           <option value="E A D G B E">Standard (EADGBE)</option>
@@ -270,7 +298,7 @@
           <option value="D A D F# A D">Open D</option>
         </select>
       </div>
-      <div>
+      <div id="capo-wrap">
         <div class="section-label" style="margin-bottom:4px;">Capo</div>
         <select id="capo">
           <option value="none">None</option>
@@ -368,6 +396,52 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
 // ── State ──────────────────────────────────────────────────────────────────
 let audioBuffer = null;
 let detectedNotes = [];
+
+// ── Instrument / tuning data ───────────────────────────────────────────────
+const TUNINGS = {
+  guitar: [
+    { label: 'Standard (EADGBE)',        value: 'E A D G B E' },
+    { label: 'Drop D (DADGBE)',           value: 'D A D G B E' },
+    { label: 'DADGAD',                    value: 'D A D G A D' },
+    { label: 'Whole Step Down (DGCFAD)', value: 'D G C F A D' },
+    { label: 'Open E',                    value: 'E B E G# B E' },
+    { label: 'Open D',                    value: 'D A D F# A D' },
+  ],
+  bass4: [
+    { label: 'Standard (EADG)',           value: 'E A D G' },
+    { label: 'Drop D (DADG)',             value: 'D A D G' },
+    { label: 'Half Step Down (Eb Ab Db Gb)', value: 'Eb Ab Db Gb' },
+    { label: 'Whole Step Down (DGCF)',    value: 'D G C F' },
+  ],
+  bass5: [
+    { label: 'Standard 5-string (BEADG)', value: 'B E A D G' },
+    { label: 'Drop A (AEADG)',            value: 'A E A D G' },
+    { label: 'Half Step Down (Bb Eb Ab Db Gb)', value: 'Bb Eb Ab Db Gb' },
+  ],
+};
+
+// Hz range per instrument — bass needs a wider low-end window
+const PITCH_RANGE = {
+  guitar: { min: 65,  max: 2000 },
+  bass4:  { min: 30,  max: 600  },
+  bass5:  { min: 25,  max: 600  },
+};
+
+function currentInstrument() {
+  return document.getElementById('instrument').value;
+}
+
+window.onInstrumentChange = function () {
+  const inst    = currentInstrument();
+  const tunings = TUNINGS[inst];
+  const select  = document.getElementById('tuning');
+  select.innerHTML = tunings.map(t =>
+    `<option value="${t.value}">${t.label}</option>`
+  ).join('');
+  // Hide capo for bass — extremely uncommon
+  document.getElementById('capo-wrap').style.display =
+    inst === 'guitar' ? '' : 'none';
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function setStatus(state, text) {
@@ -556,8 +630,11 @@ window.analyze = async function () {
   const threshold   = parseFloat(document.getElementById('sensitivity').value);
   const sampleRate  = audioBuffer.sampleRate;
   const channelData = audioBuffer.getChannelData(0);
-  const WINDOW      = 2048;
-  const HOP         = 512;
+  // Larger window for bass: gives YIN more cycles of low fundamentals (~30 Hz)
+  const isBass      = currentInstrument() !== 'guitar';
+  const WINDOW      = isBass ? 4096 : 2048;
+  const HOP         = isBass ? 1024 : 512;
+  const { min: pitchMin, max: pitchMax } = PITCH_RANGE[currentInstrument()];
   const totalFrames = Math.floor((channelData.length - WINDOW) / HOP);
 
   const detector = PitchDetector.forFloat32Array(WINDOW);
@@ -570,7 +647,7 @@ window.analyze = async function () {
     const slice  = channelData.slice(start, start + WINDOW);
     const [pitch, clarity] = detector.findPitch(slice, sampleRate);
 
-    frames.push((clarity >= threshold && pitch >= 65 && pitch <= 2000) ? pitch : null);
+    frames.push((clarity >= threshold && pitch >= pitchMin && pitch <= pitchMax) ? pitch : null);
 
     if (i % 40 === 0) {
       const pct = Math.round((i / totalFrames) * 100);
@@ -611,13 +688,22 @@ window.analyze = async function () {
 window.generateTab = async function () {
   if (!detectedNotes.length) return;
 
-  const apiKey = document.getElementById('api-key').value.trim();
-  const tuning = document.getElementById('tuning').value;
-  const capo   = document.getElementById('capo').value;
+  const apiKey  = document.getElementById('api-key').value.trim();
+  const inst    = currentInstrument();
+  const tuning  = document.getElementById('tuning').value;
+  const capo    = inst === 'guitar' ? document.getElementById('capo').value : 'none';
+  const isBass  = inst !== 'guitar';
+  const strings = inst === 'bass5' ? 5 : isBass ? 4 : 6;
+  const instrLabel = isBass ? `Bass guitar (${strings}-string)` : 'Guitar';
+
+  const stringDesc = isBass
+    ? `${strings} string lines. Highest-pitched string (1st) on TOP, lowest (${strings}th) on BOTTOM.`
+    : `6 string lines. Highest-pitched string (1st, high e) on TOP, lowest (6th, low E) on BOTTOM.`;
 
   const prompt =
-`You are a guitar tab transcription assistant. Convert these detected notes into ASCII guitar tablature.
+`You are a stringed instrument tab transcription assistant. Convert these detected notes into ASCII tablature.
 
+INSTRUMENT: ${instrLabel}
 TUNING: ${tuning}
 CAPO: ${capo === 'none' ? 'none' : 'fret ' + capo}
 
@@ -625,12 +711,12 @@ DETECTED NOTES (MIDI pitch number, start time in seconds, duration):
 ${JSON.stringify(detectedNotes, null, 2)}
 
 Output requirements:
-1. Output ASCII guitar tab with 6 string lines. Highest-pitched string (1st) on TOP, lowest (6th) on BOTTOM.
-2. Prefix each line with the open-string note name, e.g. "e|---", "B|---", etc.
+1. Output ASCII tab with ${stringDesc}
+2. Prefix each line with the open-string note name, e.g. ${isBass ? '"G|---", "D|---", "A|---", "E|---"' : '"e|---", "B|---", "G|---"'}, etc.
 3. Choose fingerings that minimize hand movement and stay in realistic fret positions (ideally frets 0-12).
 4. If capo is set, remember fret numbers are relative to the capo position.
 5. Use "|" for bar lines if you can infer phrasing; otherwise just space notes roughly by time.
-6. Keep tab lines under 80 characters wide. Wrap to a new 6-line block if needed.
+6. Keep tab lines under 80 characters wide. Wrap to a new ${strings}-line block if needed.
 7. After the tab, include 2-3 sentences on playability, position choice, and a note that rhythm is approximate.
 
 Return ONLY:
