@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patch Bay</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f0e0c;
+      --panel: #1a1816;
+      --panel-2: #141210;
+      --line: #2a2724;
+      --text: #e8e1d4;
+      --dim: #8a8275;
+      --amber: #d97706;
+      --amber-glow: #f59e0b;
+      --rust: #c2410c;
+      --green: #65a30d;
+      --red: #dc2626;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      margin: 0;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.35;
+    }
+
+    .wordmark { font-family: 'Fraunces', serif; }
+
+    .panel {
+      background-color: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: inset 0 2px 10px rgba(0,0,0,0.55);
+      border-radius: 4px;
+    }
+
+    .led {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .led-standby { background: var(--dim);      box-shadow: 0 0 5px var(--dim); }
+    .led-active  { background: var(--amber-glow); box-shadow: 0 0 8px var(--amber-glow); }
+    .led-done    { background: var(--green);     box-shadow: 0 0 8px var(--green); }
+    .led-error   { background: var(--red);       box-shadow: 0 0 8px var(--red); }
+
+    .pill {
+      padding: 4px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      font-size: 11px;
+      color: var(--dim);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.04em;
+      transition: border-color 0.25s, color 0.25s, box-shadow 0.25s;
+    }
+    .pill.lit {
+      border-color: var(--amber);
+      color: var(--amber-glow);
+      box-shadow: 0 0 8px rgba(245,158,11,0.25);
+    }
+
+    .section-label {
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      color: var(--dim);
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--line);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      text-align: center;
+      padding: 36px 20px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--amber);
+      box-shadow: 0 0 14px rgba(245,158,11,0.18);
+    }
+
+    select, input[type="password"], input[type="text"] {
+      background-color: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 6px 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, input[type="password"]:focus, input[type="text"]:focus {
+      border-color: var(--amber);
+    }
+
+    .btn {
+      background-color: var(--amber);
+      color: #0f0e0c;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: background-color 0.15s, box-shadow 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) {
+      background-color: var(--amber-glow);
+      box-shadow: 0 0 12px rgba(245,158,11,0.4);
+    }
+    .btn:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .progress-track {
+      background-color: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      height: 7px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: var(--amber-glow);
+      box-shadow: 0 0 8px rgba(245,158,11,0.55);
+      width: 0%;
+      transition: width 0.08s linear;
+    }
+
+    .tab-output {
+      background-color: var(--panel-2);
+      color: var(--amber-glow);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      padding: 20px;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      white-space: pre;
+      overflow-x: auto;
+      min-height: 120px;
+      margin: 0;
+    }
+
+    details > summary {
+      cursor: pointer;
+      color: var(--dim);
+      font-size: 11px;
+      list-style: none;
+      user-select: none;
+    }
+    details > summary::before { content: '▶  '; font-size: 8px; }
+    details[open] > summary::before { content: '▼  '; }
+
+    .note-row {
+      display: grid;
+      grid-template-columns: 50px 60px 80px 80px 80px;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--dim);
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(42,39,36,0.4);
+    }
+    .note-row .midi { color: var(--amber); }
+
+    .info-grid {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .info-grid > div { display: flex; flex-direction: column; gap: 3px; }
+    .info-val { font-size: 12px; color: var(--amber); }
+
+    .connector { color: var(--line); font-size: 10px; flex-shrink: 0; }
+
+    canvas { display: block; }
+  </style>
+</head>
+<body style="padding: 36px 20px;">
+<div style="max-width: 760px; margin: 0 auto;">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header style="margin-bottom: 32px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+      <h1 class="wordmark" style="font-size:2.3rem; margin:0; letter-spacing:-0.01em; font-weight:600;">
+        Patch <em style="color:var(--amber-glow); font-style:italic; font-weight:400;">Bay</em>
+      </h1>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span id="status-led" class="led led-standby"></span>
+        <span id="status-text" class="section-label">standby</span>
+      </div>
+    </div>
+    <p style="color:var(--dim); font-size:12px; margin:0; max-width:500px; line-height:1.6;">
+      Monophonic guitar audio → ASCII tab. YIN pitch detection runs in your browser —
+      only a small JSON payload of note events is sent to Claude.
+    </p>
+  </header>
+
+  <!-- ── Pipeline pills ─────────────────────────────────────────────────── -->
+  <div style="display:flex; align-items:center; gap:8px; margin-bottom:28px;">
+    <div id="pill-1" class="pill lit">01 · Input</div>
+    <div class="connector">───</div>
+    <div id="pill-2" class="pill">02 · Detect</div>
+    <div class="connector">───</div>
+    <div id="pill-3" class="pill">03 · Tab</div>
+  </div>
+
+  <!-- ── 01 Source panel ────────────────────────────────────────────────── -->
+  <div class="panel" style="padding:20px; margin-bottom:14px;">
+    <div class="section-label" style="margin-bottom:14px;">01 · Audio Source</div>
+
+    <div id="drop-zone" class="drop-zone" style="margin-bottom:16px;"
+         onclick="document.getElementById('file-input').click()">
+      <div style="color:var(--dim); font-size:13px; margin-bottom:6px;">
+        Drop an audio file here or click to browse
+      </div>
+      <div style="color:var(--line); font-size:11px;">MP3 · WAV · OGG · M4A · FLAC · any audio/*</div>
+      <input type="file" id="file-input" accept="audio/*" style="display:none;" />
+    </div>
+
+    <div id="file-info" style="display:none; margin-bottom:16px; padding:12px;
+         background:var(--panel-2); border:1px solid var(--line); border-radius:3px;">
+      <div class="info-grid">
+        <div><span class="section-label">file</span>     <span id="info-name"     class="info-val" style="color:var(--text); font-size:11px;"></span></div>
+        <div><span class="section-label">duration</span> <span id="info-duration" class="info-val"></span></div>
+        <div><span class="section-label">sample rate</span><span id="info-sr"    class="info-val"></span></div>
+        <div><span class="section-label">channels</span> <span id="info-ch"      class="info-val"></span></div>
+        <div><span class="section-label">size</span>     <span id="info-size"    class="info-val"></span></div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Tuning</div>
+        <select id="tuning">
+          <option value="E A D G B E">Standard (EADGBE)</option>
+          <option value="D A D G B E">Drop D (DADGBE)</option>
+          <option value="D A D G A D">DADGAD</option>
+          <option value="D G C F A D">Whole Step Down (DGCFAD)</option>
+          <option value="E B E G# B E">Open E</option>
+          <option value="D A D F# A D">Open D</option>
+        </select>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Capo</div>
+        <select id="capo">
+          <option value="none">None</option>
+          <option value="1">Fret 1</option>
+          <option value="2">Fret 2</option>
+          <option value="3">Fret 3</option>
+          <option value="4">Fret 4</option>
+          <option value="5">Fret 5</option>
+          <option value="7">Fret 7</option>
+        </select>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Sensitivity</div>
+        <select id="sensitivity">
+          <option value="0.80">Loose (0.80)</option>
+          <option value="0.90" selected>Balanced (0.90)</option>
+          <option value="0.95">Strict (0.95)</option>
+        </select>
+      </div>
+      <button id="analyze-btn" class="btn" disabled onclick="analyze()">Analyze</button>
+    </div>
+  </div>
+
+  <!-- ── API key notice ─────────────────────────────────────────────────── -->
+  <div class="panel" style="padding:14px 20px; margin-bottom:14px;">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div class="section-label" style="white-space:nowrap;">Anthropic API Key</div>
+      <input type="password" id="api-key" placeholder="sk-ant-…  (never committed)"
+             style="flex:1; min-width:200px;" />
+      <span style="color:var(--dim); font-size:10px; letter-spacing:0.03em;">
+        used only in this browser session · see README for proxy setup
+      </span>
+    </div>
+  </div>
+
+  <!-- ── 02 Detection panel ─────────────────────────────────────────────── -->
+  <div id="detection-panel" class="panel" style="display:none; padding:20px; margin-bottom:14px;">
+    <div class="section-label" style="margin-bottom:14px;">02 · Pitch Detection</div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span id="detect-status" style="font-size:12px; color:var(--dim);">Analyzing…</span>
+      <span id="detect-pct"    style="font-size:11px; color:var(--amber);">0%</span>
+    </div>
+    <div class="progress-track" style="margin-bottom:18px;">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+
+    <canvas id="piano-roll" style="width:100%; height:140px; border-radius:3px;
+            border:1px solid var(--line); margin-bottom:16px;"></canvas>
+
+    <details>
+      <summary>Note events (<span id="note-count">0</span> detected)</summary>
+      <div style="margin-top:10px; max-height:200px; overflow-y:auto;">
+        <div class="note-row" style="color:var(--dim); font-size:10px;
+             border-bottom:1px solid var(--line); margin-bottom:4px; padding-bottom:4px;">
+          <span>MIDI</span><span>NOTE</span><span>START</span><span>END</span><span>DUR</span>
+        </div>
+        <div id="note-list"></div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ── 03 Tab panel ───────────────────────────────────────────────────── -->
+  <div id="tab-panel" class="panel" style="display:none; padding:20px; margin-bottom:14px;">
+    <div class="section-label" style="margin-bottom:14px;">03 · ASCII Tab</div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <span style="font-size:11px; color:var(--dim);">
+        <span id="tab-note-count">0</span> note events ready to send
+      </span>
+      <button id="generate-btn" class="btn" onclick="generateTab()">Generate Tab</button>
+    </div>
+
+    <div id="tab-loading" style="display:none; color:var(--dim); font-size:12px; margin-bottom:12px;">
+      <span style="color:var(--amber);">▶</span>&nbsp; Sending to Claude…
+    </div>
+
+    <pre id="tab-output"    class="tab-output" style="display:none;"></pre>
+    <p   id="play-notes"   style="display:none; margin:16px 0 0; font-size:13px;
+         color:var(--dim); font-family:'Fraunces',serif; font-style:italic; line-height:1.75;"></p>
+  </div>
+
+  <!-- ── Footer ────────────────────────────────────────────────────────── -->
+  <footer style="margin-top:32px; padding-top:14px; border-top:1px solid var(--line);">
+    <div style="font-size:10px; color:var(--line); letter-spacing:0.1em;">
+      pitchy · YIN · Web Audio API · Claude · Tailwind CDN · JetBrains Mono · Fraunces
+    </div>
+  </footer>
+
+</div><!-- /container -->
+
+<script type="module">
+import { PitchDetector } from "https://esm.sh/pitchy@4";
+
+// ── State ──────────────────────────────────────────────────────────────────
+let audioBuffer = null;
+let detectedNotes = [];
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  document.getElementById('status-led').className = `led led-${state}`;
+  document.getElementById('status-text').textContent = text;
+}
+
+function litPill(n) {
+  document.getElementById(`pill-${n}`).classList.add('lit');
+}
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function midiToName(midi) {
+  return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+}
+
+function hzToMidi(hz) {
+  return 69 + 12 * Math.log2(hz / 440);
+}
+
+// ── File loading ───────────────────────────────────────────────────────────
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+async function loadFile(file) {
+  setStatus('active', 'decoding…');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const ctx = new AudioContext();
+    audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+    document.getElementById('info-name').textContent     = file.name;
+    document.getElementById('info-duration').textContent = audioBuffer.duration.toFixed(2) + ' s';
+    document.getElementById('info-sr').textContent       = audioBuffer.sampleRate.toLocaleString() + ' Hz';
+    document.getElementById('info-ch').textContent       = audioBuffer.numberOfChannels;
+    document.getElementById('info-size').textContent     = (file.size / 1024).toFixed(1) + ' KB';
+    document.getElementById('file-info').style.display   = 'block';
+    document.getElementById('analyze-btn').disabled      = false;
+
+    setStatus('standby', 'ready');
+    litPill(1);
+  } catch (err) {
+    setStatus('error', 'decode failed');
+    console.error(err);
+  }
+}
+
+// ── Note segmenter ─────────────────────────────────────────────────────────
+function segmentNotes(frames, sampleRate) {
+  const hopSize    = 512;
+  const spf        = hopSize / sampleRate;          // seconds per frame
+  const minFrames  = Math.ceil(0.05 / spf);         // 50 ms minimum note
+
+  const notes      = [];
+  let groupStart   = null;
+  let groupMidis   = [];
+
+  function flush() {
+    if (groupMidis.length < minFrames) return;
+    const avg   = groupMidis.reduce((a, b) => a + b, 0) / groupMidis.length;
+    const midi  = Math.round(avg);
+    const start = groupStart * spf;
+    const end   = (groupStart + groupMidis.length) * spf;
+    notes.push({
+      midi,
+      pitch:    midiToName(midi),
+      start:    parseFloat(start.toFixed(3)),
+      end:      parseFloat(end.toFixed(3)),
+      duration: parseFloat((end - start).toFixed(3)),
+    });
+  }
+
+  frames.forEach((hz, i) => {
+    if (hz === null) {
+      if (groupMidis.length) { flush(); groupMidis = []; groupStart = null; }
+      return;
+    }
+    const m = hzToMidi(hz);
+    if (groupStart === null) {
+      groupStart = i;
+      groupMidis = [m];
+    } else {
+      const avg = groupMidis.reduce((a, b) => a + b, 0) / groupMidis.length;
+      if (Math.abs(m - avg) <= 0.5) {
+        groupMidis.push(m);
+      } else {
+        flush();
+        groupStart = i;
+        groupMidis = [m];
+      }
+    }
+  });
+  if (groupMidis.length) flush();
+
+  return notes;
+}
+
+// ── Piano-roll renderer ────────────────────────────────────────────────────
+function drawPianoRoll(notes, duration) {
+  const canvas = document.getElementById('piano-roll');
+  const dpr    = window.devicePixelRatio || 1;
+  const rect   = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.fillStyle = '#0f0e0c';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!notes.length) {
+    ctx.fillStyle = '#8a8275';
+    ctx.font = '12px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('no notes detected — try loosening sensitivity', W / 2, H / 2);
+    return;
+  }
+
+  // Grid
+  const labelH = 18;
+  const plotH  = H - labelH;
+  ctx.strokeStyle = '#2a2724';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i <= 10; i++) {
+    const x = (i / 10) * W;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, plotH); ctx.stroke();
+    if (i % 2 === 0) {
+      ctx.fillStyle = '#8a8275';
+      ctx.font = '9px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText((i / 10 * duration).toFixed(1) + 's', x, H - 4);
+    }
+  }
+
+  // MIDI range
+  const midis    = notes.map(n => n.midi);
+  const minMidi  = Math.min(...midis) - 2;
+  const maxMidi  = Math.max(...midis) + 2;
+  const midiSpan = Math.max(1, maxMidi - minMidi);
+  const noteH    = Math.max(3, plotH / midiSpan);
+
+  notes.forEach(n => {
+    const x = (n.start    / duration) * W;
+    const w = Math.max(4, (n.duration / duration) * W);
+    const y = plotH - ((n.midi - minMidi) / midiSpan) * plotH - noteH;
+
+    // Glow
+    const grd = ctx.createRadialGradient(x + w / 2, y + noteH / 2, 0,
+                                          x + w / 2, y + noteH / 2, w / 2 + 10);
+    grd.addColorStop(0, 'rgba(245,158,11,0.22)');
+    grd.addColorStop(1, 'rgba(245,158,11,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(x - 10, y - 10, w + 20, noteH + 20);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(x, y, w, noteH);
+  });
+}
+
+// ── Analyze ────────────────────────────────────────────────────────────────
+window.analyze = async function () {
+  if (!audioBuffer) return;
+
+  setStatus('active', 'analyzing…');
+  litPill(2);
+
+  document.getElementById('detection-panel').style.display = 'block';
+  document.getElementById('tab-panel').style.display       = 'none';
+  document.getElementById('analyze-btn').disabled          = true;
+  document.getElementById('detect-status').textContent     = 'Analyzing…';
+  document.getElementById('detect-pct').textContent        = '0%';
+  document.getElementById('progress-fill').style.width     = '0%';
+
+  const threshold   = parseFloat(document.getElementById('sensitivity').value);
+  const sampleRate  = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0);
+  const WINDOW      = 2048;
+  const HOP         = 512;
+  const totalFrames = Math.floor((channelData.length - WINDOW) / HOP);
+
+  const detector = PitchDetector.forFloat32Array(WINDOW);
+  detector.minVolumeDecibels = -45;
+
+  const frames = [];
+
+  for (let i = 0; i < totalFrames; i++) {
+    const start  = i * HOP;
+    const slice  = channelData.slice(start, start + WINDOW);
+    const [pitch, clarity] = detector.findPitch(slice, sampleRate);
+
+    frames.push((clarity >= threshold && pitch >= 65 && pitch <= 2000) ? pitch : null);
+
+    if (i % 40 === 0) {
+      const pct = Math.round((i / totalFrames) * 100);
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('detect-pct').textContent    = pct + '%';
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  document.getElementById('progress-fill').style.width = '100%';
+  document.getElementById('detect-pct').textContent    = '100%';
+  document.getElementById('detect-status').textContent = 'Complete';
+
+  detectedNotes = segmentNotes(frames, sampleRate);
+
+  document.getElementById('note-count').textContent     = detectedNotes.length;
+  document.getElementById('tab-note-count').textContent = detectedNotes.length;
+
+  const list = document.getElementById('note-list');
+  list.innerHTML = '';
+  detectedNotes.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'note-row';
+    row.innerHTML = `<span class="midi">${n.midi}</span><span>${n.pitch}</span>`
+                  + `<span>${n.start}s</span><span>${n.end}s</span><span>${n.duration}s</span>`;
+    list.appendChild(row);
+  });
+
+  drawPianoRoll(detectedNotes, audioBuffer.duration);
+
+  document.getElementById('tab-panel').style.display = 'block';
+  document.getElementById('analyze-btn').disabled     = false;
+  litPill(3);
+  setStatus('done', 'detection done');
+};
+
+// ── Generate Tab ───────────────────────────────────────────────────────────
+window.generateTab = async function () {
+  if (!detectedNotes.length) return;
+
+  const apiKey = document.getElementById('api-key').value.trim();
+  const tuning = document.getElementById('tuning').value;
+  const capo   = document.getElementById('capo').value;
+
+  const prompt =
+`You are a guitar tab transcription assistant. Convert these detected notes into ASCII guitar tablature.
+
+TUNING: ${tuning}
+CAPO: ${capo === 'none' ? 'none' : 'fret ' + capo}
+
+DETECTED NOTES (MIDI pitch number, start time in seconds, duration):
+${JSON.stringify(detectedNotes, null, 2)}
+
+Output requirements:
+1. Output ASCII guitar tab with 6 string lines. Highest-pitched string (1st) on TOP, lowest (6th) on BOTTOM.
+2. Prefix each line with the open-string note name, e.g. "e|---", "B|---", etc.
+3. Choose fingerings that minimize hand movement and stay in realistic fret positions (ideally frets 0-12).
+4. If capo is set, remember fret numbers are relative to the capo position.
+5. Use "|" for bar lines if you can infer phrasing; otherwise just space notes roughly by time.
+6. Keep tab lines under 80 characters wide. Wrap to a new 6-line block if needed.
+7. After the tab, include 2-3 sentences on playability, position choice, and a note that rhythm is approximate.
+
+Return ONLY:
+- First, a code block tagged \`\`\`tab containing the tablature.
+- Then your playability notes as plain prose (no header).`;
+
+  const headers = {
+    'Content-Type':      'application/json',
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+  if (apiKey) headers['x-api-key'] = apiKey;
+
+  document.getElementById('generate-btn').disabled      = true;
+  document.getElementById('tab-loading').style.display  = 'block';
+  document.getElementById('tab-output').style.display   = 'none';
+  document.getElementById('play-notes').style.display   = 'none';
+  setStatus('active', 'calling Claude…');
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 2000,
+        messages:   [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text = data.content[0].text;
+
+    const tabMatch  = text.match(/```tab\n([\s\S]*?)```/);
+    const tabText   = tabMatch ? tabMatch[1].trimEnd() : text;
+    const afterTab  = tabMatch
+      ? text.slice(tabMatch.index + tabMatch[0].length).trim()
+      : '';
+
+    const out = document.getElementById('tab-output');
+    out.textContent  = tabText;
+    out.style.display = 'block';
+
+    if (afterTab) {
+      const pn = document.getElementById('play-notes');
+      pn.textContent  = afterTab;
+      pn.style.display = 'block';
+    }
+
+    setStatus('done', 'tab ready');
+  } catch (err) {
+    const out = document.getElementById('tab-output');
+    out.textContent = `Error: ${err.message}\n\nFor local use, enter your Anthropic API key above\nor set up a proxy — see README.`;
+    out.style.display = 'block';
+    setStatus('error', 'error');
+    console.error(err);
+  } finally {
+    document.getElementById('generate-btn').disabled     = false;
+    document.getElementById('tab-loading').style.display = 'none';
+  }
+};
+</script>
+</body>
+</html>
