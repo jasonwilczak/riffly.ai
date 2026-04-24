@@ -270,6 +270,27 @@
       </div>
     </details>
 
+    <details style="margin-bottom:16px;">
+      <summary style="font-size:11px; color:var(--dim);">Recording has multiple instruments?</summary>
+      <div style="margin-top:10px; padding:12px; background:var(--panel-2);
+           border:1px solid var(--line); border-radius:3px; font-size:11px; color:var(--dim); line-height:1.8;">
+        The <strong style="color:var(--text);">Track Focus</strong> filter below helps isolate frequency bands,
+        but for clean stem separation (bass / drums / melody / vocals) use a dedicated tool first,
+        then drop the stem you want here:
+        <div style="margin-top:8px; display:flex; gap:16px; flex-wrap:wrap;">
+          <a href="https://moises.ai" target="_blank" style="color:var(--amber); text-decoration:none;">
+            Moises.ai <span style="color:var(--line);">— free tier</span>
+          </a>
+          <a href="https://www.lalal.ai" target="_blank" style="color:var(--amber); text-decoration:none;">
+            LALAL.AI <span style="color:var(--line);">— free credits</span>
+          </a>
+          <a href="https://splitter.ai" target="_blank" style="color:var(--amber); text-decoration:none;">
+            Splitter.ai <span style="color:var(--line);">— free</span>
+          </a>
+        </div>
+      </div>
+    </details>
+
     <div id="file-info" style="display:none; margin-bottom:16px; padding:12px;
          background:var(--panel-2); border:1px solid var(--line); border-radius:3px;">
       <div class="info-grid">
@@ -288,6 +309,15 @@
           <option value="guitar">Guitar</option>
           <option value="bass4">Bass (4-string)</option>
           <option value="bass5">Bass (5-string)</option>
+        </select>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:4px;">Track Focus</div>
+        <select id="track-focus">
+          <option value="full">Full Range</option>
+          <option value="bass">Bass  (≤ 300 Hz)</option>
+          <option value="mid">Mid / Guitar  (200 Hz – 2.5 kHz)</option>
+          <option value="high">High / Treble  (1 kHz+)</option>
         </select>
       </div>
       <div>
@@ -443,6 +473,53 @@ const PITCH_RANGE = {
   bass4:  { min: 30,  max: 600  },
   bass5:  { min: 25,  max: 600  },
 };
+
+// Hz range per focus band — overrides instrument range when set
+const FOCUS_RANGE = {
+  full: null,
+  bass: { min: 30,  max: 400  },
+  mid:  { min: 150, max: 2800 },
+  high: { min: 800, max: 5000 },
+};
+
+// Offline bandpass filter applied to the AudioBuffer before YIN detection
+async function applyBandFilter(buffer, focus) {
+  if (focus === 'full') return buffer;
+
+  const ctx    = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
+  const source = ctx.createBufferSource();
+
+  // Downmix to mono
+  const mono = ctx.createChannelMerger(1);
+  source.connect(mono);
+
+  const filters = [];
+
+  if (focus === 'bass') {
+    // Two cascaded lowpass filters for steeper rolloff above 300 Hz
+    const lp1 = ctx.createBiquadFilter(); lp1.type = 'lowpass'; lp1.frequency.value = 300; lp1.Q.value = 0.7;
+    const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 300; lp2.Q.value = 0.7;
+    filters.push(lp1, lp2);
+  } else if (focus === 'mid') {
+    const hp  = ctx.createBiquadFilter(); hp.type  = 'highpass'; hp.frequency.value  = 200;  hp.Q.value = 0.7;
+    const lp  = ctx.createBiquadFilter(); lp.type  = 'lowpass';  lp.frequency.value  = 2500; lp.Q.value = 0.7;
+    filters.push(hp, lp);
+  } else if (focus === 'high') {
+    // Two cascaded highpass filters for steeper rolloff below 1 kHz
+    const hp1 = ctx.createBiquadFilter(); hp1.type = 'highpass'; hp1.frequency.value = 1000; hp1.Q.value = 0.7;
+    const hp2 = ctx.createBiquadFilter(); hp2.type = 'highpass'; hp2.frequency.value = 1000; hp2.Q.value = 0.7;
+    filters.push(hp1, hp2);
+  }
+
+  // Chain: mono merger → filter[0] → filter[1] → … → destination
+  let node = mono;
+  for (const f of filters) { node.connect(f); node = f; }
+  node.connect(ctx.destination);
+
+  source.buffer = buffer;
+  source.start(0);
+  return ctx.startRendering();
+}
 
 function currentInstrument() {
   return document.getElementById('instrument').value;
@@ -645,13 +722,22 @@ window.analyze = async function () {
   document.getElementById('progress-fill').style.width     = '0%';
 
   const threshold   = parseFloat(document.getElementById('sensitivity').value);
-  const sampleRate  = audioBuffer.sampleRate;
-  const channelData = audioBuffer.getChannelData(0);
-  // Larger window for bass: gives YIN more cycles of low fundamentals (~30 Hz)
-  const isBass      = currentInstrument() !== 'guitar';
-  const WINDOW      = isBass ? 4096 : 2048;
-  const HOP         = isBass ? 1024 : 512;
-  const { min: pitchMin, max: pitchMax } = PITCH_RANGE[currentInstrument()];
+  const focus       = document.getElementById('track-focus').value;
+
+  document.getElementById('detect-status').textContent = focus !== 'full' ? 'Filtering…' : 'Analyzing…';
+  await new Promise(r => setTimeout(r, 0)); // let the UI update before blocking work
+
+  const filteredBuffer = await applyBandFilter(audioBuffer, focus);
+  document.getElementById('detect-status').textContent = 'Analyzing…';
+
+  const sampleRate  = filteredBuffer.sampleRate;
+  const channelData = filteredBuffer.getChannelData(0);
+  // Use a larger window for bass-range focus: more waveform cycles → better low-freq accuracy
+  const needsBigWindow = focus === 'bass' || (focus === 'full' && currentInstrument() !== 'guitar');
+  const WINDOW      = needsBigWindow ? 4096 : 2048;
+  const HOP         = needsBigWindow ? 1024 : 512;
+  const range       = FOCUS_RANGE[focus] ?? PITCH_RANGE[currentInstrument()];
+  const { min: pitchMin, max: pitchMax } = range;
   const totalFrames = Math.floor((channelData.length - WINDOW) / HOP);
 
   const detector = PitchDetector.forFloat32Array(WINDOW);
